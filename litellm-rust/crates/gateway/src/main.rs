@@ -104,12 +104,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tracing::info!(address = %listener.local_addr()?, models = config.model_list.len(), log_level = %level, python_upstream = settings.litellm_python_upstream.as_deref(), "gateway listening");
 
-    let result = axum::serve(
+    let result = litellm_gateway::serve(
         listener,
-        litellm_gateway::router(inference, &config, ui, mcp_router, fallback)
-            .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        litellm_gateway::router(inference, &config, ui, mcp_router, fallback),
+        shutdown.clone().cancelled_owned(),
     )
-    .with_graceful_shutdown(shutdown.clone().cancelled_owned())
     .await;
     shutdown.cancel();
     if let Some(mcp) = mcp {

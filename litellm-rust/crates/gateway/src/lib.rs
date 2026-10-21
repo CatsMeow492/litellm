@@ -136,6 +136,19 @@ pub fn router(
     dispatch::forward_unmatched(served, fallback)
 }
 
+pub async fn serve(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown)
+    .await
+}
+
 async fn log_request(request: Request, next: Next) -> Response {
     let request_id = Uuid::new_v4().to_string();
     let log_body_chunks = tracing::enabled!(tracing::Level::DEBUG);
