@@ -6,8 +6,8 @@ use std::sync::Arc;
 use axum::{
     Json,
     body::Bytes,
-    extract::State,
-    http::HeaderMap,
+    extract::{FromRequestParts, State},
+    http::request::Parts,
     response::{IntoResponse, Response},
 };
 use litellm_host_http::Sse;
@@ -30,11 +30,11 @@ pub async fn create(
     State(gateway): State<Arc<Gateway>>,
     identity: AuthenticatedRequest,
     RequestId(request_id): RequestId,
-    headers: HeaderMap,
+    ClientHeaders(client_headers): ClientHeaders,
     body: Result<JsonObject, Error>,
 ) -> impl IntoResponse {
     let result = match body {
-        Ok(JsonObject(body)) => handle(&gateway, &identity, &headers, body).await,
+        Ok(JsonObject(body)) => handle(&gateway, &identity, client_headers, body).await,
         Err(error) => Err(error),
     };
     result.map_err(|error| (error.status(), Json(error.body(request_id.as_deref()))))
@@ -43,7 +43,7 @@ pub async fn create(
 async fn handle(
     gateway: &Gateway,
     identity: &AuthenticatedRequest,
-    headers: &HeaderMap,
+    client_headers: Option<ProviderSpecificHeaders>,
     body: Map<String, Value>,
 ) -> Result<Response, Error> {
     let deployment = request::resolve_deployment(gateway, &body)?;
@@ -58,7 +58,7 @@ async fn handle(
         None => route,
     };
 
-    let call = project(deployment, body, headers)?;
+    let call = project(deployment, body, client_headers)?;
     let machine = route.machine(call, cache_options.policy);
     let stream =
         Sse::<Messages, _, _>::new(Json, |error| Bytes::from(Error::from(error).sse_frame()));
@@ -70,7 +70,7 @@ async fn handle(
 fn project(
     deployment: &Deployment,
     body: Map<String, Value>,
-    headers: &HeaderMap,
+    client_headers: Option<ProviderSpecificHeaders>,
 ) -> Result<MessagesCall, Error> {
     let body = body
         .into_iter()
@@ -86,13 +86,23 @@ fn project(
         custom_llm_provider: deployment.custom_llm_provider.clone(),
         litellm_params: deployment.litellm_params.clone(),
         extra_headers: None,
-        provider_specific_header: anthropic_api_headers(headers),
+        provider_specific_header: client_headers,
         timeout: deployment.timeout,
         shaping: deployment.shaping.clone(),
     })
 }
 
-fn anthropic_api_headers(headers: &HeaderMap) -> Option<ProviderSpecificHeaders> {
+pub struct ClientHeaders(Option<ProviderSpecificHeaders>);
+
+impl<S: Send + Sync> FromRequestParts<S> for ClientHeaders {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        Ok(Self(forwarded(parts)))
+    }
+}
+
+fn forwarded(parts: &Parts) -> Option<ProviderSpecificHeaders> {
     let scopes = [
         (
             ANTHROPIC_API_HEADER_PROVIDERS,
@@ -106,7 +116,7 @@ fn anthropic_api_headers(headers: &HeaderMap) -> Option<ProviderSpecificHeaders>
             let extra_headers: Map<String, Value> = names
                 .iter()
                 .filter_map(|name| {
-                    let value = headers.get(*name)?.to_str().ok()?;
+                    let value = parts.headers.get(*name)?.to_str().ok()?;
                     Some(((*name).to_owned(), Value::from(value)))
                 })
                 .collect();
