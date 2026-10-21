@@ -24,9 +24,11 @@ const DECLINED_HEADER: HeaderName = HeaderName::from_static("x-litellm-gateway-d
 
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 
+const KEEP_ALIVE: HeaderName = HeaderName::from_static("keep-alive");
+
 const HOP_BY_HOP: [HeaderName; 8] = [
     CONNECTION,
-    HeaderName::from_static("keep-alive"),
+    KEEP_ALIVE,
     PROXY_AUTHENTICATE,
     PROXY_AUTHORIZATION,
     TE,
