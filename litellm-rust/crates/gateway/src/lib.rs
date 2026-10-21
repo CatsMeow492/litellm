@@ -16,7 +16,10 @@ use http_body_util::BodyExt;
 
 use litellm_config::Config;
 use litellm_gateway_auth::Auth;
-use litellm_gateway_inference::{Gateway, ModelRouter};
+use litellm_gateway_inference::{
+    Gateway, ModelRouter,
+    dispatch::{Fallback, NOT_NATIVE},
+};
 use litellm_http::{
     ClientVariant, HttpClientPool, HttpSettings, HttpSettingsLayer, Resolution, SslVerify,
     media::PublicDnsResolver,
@@ -118,19 +121,30 @@ pub fn router(
     config: &Config,
     ui: Option<Router>,
     mcp: Option<Router>,
+    fallback: Fallback,
 ) -> Router {
     let auth = Auth::from_config(config, inference.secrets.clone());
-    let inference = litellm_gateway_inference::router(inference)
+    let served = litellm_gateway_inference::router(inference, fallback.clone())
         .merge(mcp.unwrap_or_default())
         .route_layer(axum::middleware::from_fn(auth::bind_session_owner))
         .route_layer(axum::middleware::from_fn_with_state(
             auth,
             litellm_gateway_auth::authenticate,
         ))
-        .layer(axum::middleware::from_fn(log_request));
-    match ui {
-        Some(ui) => inference.merge(ui),
-        None => inference,
+        .layer(axum::middleware::from_fn(log_request))
+        .merge(ui.unwrap_or_default());
+    match fallback {
+        Fallback::Reject => served,
+        Fallback::Forward(forward) => {
+            let unmatched = forward.clone();
+            served
+                .fallback(move |request: Request| async move {
+                    unmatched.send(request, NOT_NATIVE).await
+                })
+                .method_not_allowed_fallback(move |request: Request| async move {
+                    forward.send(request, NOT_NATIVE).await
+                })
+        }
     }
 }
 

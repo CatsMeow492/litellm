@@ -1,8 +1,7 @@
 use axum::{
     body::Bytes,
-    extract::{FromRequest, FromRequestParts, Multipart, OriginalUri, Request},
+    extract::{FromRequest, FromRequestParts, Multipart, Request},
     http::request::Parts,
-    response::IntoResponse,
 };
 use serde_json::{Map, Value};
 
@@ -160,10 +159,6 @@ fn multipart_error(error: axum::extract::multipart::MultipartError) -> Error {
         return Error::BodyTooLarge;
     }
     Error::InvalidBody(error.to_string())
-}
-
-pub(crate) async fn unsupported(OriginalUri(uri): OriginalUri) -> impl IntoResponse {
-    Error::Unsupported(uri.path().to_owned())
 }
 
 #[cfg(test)]

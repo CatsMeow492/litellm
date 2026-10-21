@@ -6,6 +6,7 @@
 mod audio_transcription;
 mod caching;
 mod chat_completions;
+pub mod dispatch;
 mod error;
 pub mod messages;
 mod ocr;
@@ -88,7 +89,7 @@ impl Gateway {
     }
 }
 
-pub fn router(gateway: Arc<Gateway>) -> Router {
+pub fn router(gateway: Arc<Gateway>, fallback: dispatch::Fallback) -> Router {
     Router::new()
         .route("/v1/messages", post(messages::create))
         .route("/ocr", post(ocr::create))
@@ -104,10 +105,10 @@ pub fn router(gateway: Arc<Gateway>) -> Router {
         )
         .route("/responses", post(responses::create))
         .route("/v1/responses", post(responses::create))
-        .route("/embeddings", post(request::unsupported))
-        .route("/v1/embeddings", post(request::unsupported))
-        .route("/completions", post(request::unsupported))
-        .route("/v1/completions", post(request::unsupported))
+        .route_layer(axum::middleware::from_fn_with_state(
+            fallback,
+            dispatch::replay,
+        ))
         .layer(axum::extract::DefaultBodyLimit::max(
             request::MAX_BODY_BYTES,
         ))
@@ -115,11 +116,8 @@ pub fn router(gateway: Arc<Gateway>) -> Router {
 }
 
 fn model_routes() -> Router<Arc<Gateway>> {
-    Router::new()
-        .route(
-            "/chat/completions",
-            post(chat_completions::create_from_model_path),
-        )
-        .route("/embeddings", post(request::unsupported))
-        .route("/completions", post(request::unsupported))
+    Router::new().route(
+        "/chat/completions",
+        post(chat_completions::create_from_model_path),
+    )
 }

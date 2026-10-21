@@ -3757,6 +3757,7 @@ dependencies = [
  "tower-sessions-moka-store",
  "tracing",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -3788,9 +3789,11 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures-util",
+ "hyper-util",
  "litellm-auth",
  "litellm-cache-memory",
  "litellm-cache-response",
+ "litellm-core-utils",
  "litellm-gateway-auth",
  "litellm-host",
  "litellm-host-http",
@@ -3811,6 +3814,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tower",
+ "tracing",
  "wiremock",
 ]
 
