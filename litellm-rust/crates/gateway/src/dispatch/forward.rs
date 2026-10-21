@@ -20,7 +20,7 @@ use hyper_util::{
 use litellm_core_utils::decline::Decline;
 
 /// Python reads it to log why the gateway handed the request over.
-pub const DECLINED_HEADER: HeaderName = HeaderName::from_static("x-litellm-gateway-declined");
+const DECLINED_HEADER: HeaderName = HeaderName::from_static("x-litellm-gateway-declined");
 
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 
@@ -64,7 +64,7 @@ impl Forward {
         })
     }
 
-    pub async fn send(&self, request: Request, decline: Decline) -> Response {
+    pub(super) async fn send(&self, request: Request, decline: Decline) -> Response {
         let (mut parts, body) = request.into_parts();
         let path = parts
             .extensions

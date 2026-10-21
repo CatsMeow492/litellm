@@ -3732,11 +3732,14 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "bytes",
  "envy",
  "futures-util",
  "http-body-util",
+ "hyper-util",
  "litellm-auth-types",
  "litellm-config",
+ "litellm-core-utils",
  "litellm-gateway-auth",
  "litellm-gateway-inference",
  "litellm-gateway-mcp",
@@ -3789,7 +3792,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "futures-util",
- "hyper-util",
  "litellm-auth",
  "litellm-cache-memory",
  "litellm-cache-response",
@@ -3814,7 +3816,6 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tower",
- "tracing",
  "wiremock",
 ]
 

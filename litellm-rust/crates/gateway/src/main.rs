@@ -4,8 +4,8 @@ use std::{
 };
 
 use litellm_config::Config;
+use litellm_gateway::{Fallback, Forward};
 use litellm_gateway_auth::UiBackend;
-use litellm_gateway_inference::dispatch::{Fallback, Forward};
 use litellm_tracing::{Level, Logger, Metadata, Record, Sink};
 use serde_json::json;
 

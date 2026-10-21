@@ -6,7 +6,6 @@
 mod audio_transcription;
 mod caching;
 mod chat_completions;
-pub mod dispatch;
 mod error;
 pub mod messages;
 mod ocr;
@@ -28,7 +27,7 @@ use litellm_secrets::source::SecretSource;
 
 pub use error::Error;
 pub use litellm_router::{Deployment, Router as ModelRouter};
-pub use request::{JsonObject, RequestId};
+pub use request::{JsonObject, MAX_BODY_BYTES, RequestId};
 
 pub struct Gateway {
     cache: Option<Arc<dyn litellm_cache_response::ResponseCacheService>>,
@@ -89,7 +88,7 @@ impl Gateway {
     }
 }
 
-pub fn router(gateway: Arc<Gateway>, fallback: dispatch::Fallback) -> Router {
+pub fn router(gateway: Arc<Gateway>) -> Router {
     Router::new()
         .route("/v1/messages", post(messages::create))
         .route("/ocr", post(ocr::create))
@@ -105,10 +104,6 @@ pub fn router(gateway: Arc<Gateway>, fallback: dispatch::Fallback) -> Router {
         )
         .route("/responses", post(responses::create))
         .route("/v1/responses", post(responses::create))
-        .route_layer(axum::middleware::from_fn_with_state(
-            fallback,
-            dispatch::replay,
-        ))
         .layer(axum::extract::DefaultBodyLimit::max(
             request::MAX_BODY_BYTES,
         ))

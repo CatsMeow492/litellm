@@ -6,10 +6,8 @@ use std::{
 use axum::{body::Body, http::Request};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use litellm_config::Config;
-use litellm_gateway_inference::{
-    Error, Gateway,
-    dispatch::{Fallback, Forward},
-};
+use litellm_gateway::{Fallback, Forward};
+use litellm_gateway_inference::{Error, Gateway};
 use litellm_http::ClientVariant;
 use litellm_tracing::{Logger, Metadata, Record, Sink};
 use rstest::{fixture, rstest};

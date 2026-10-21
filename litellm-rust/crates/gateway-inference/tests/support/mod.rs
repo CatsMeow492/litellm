@@ -10,11 +10,7 @@ use axum::{
     response::Response,
 };
 use futures_util::future::BoxFuture;
-use litellm_gateway_inference::{
-    Deployment, Gateway,
-    dispatch::{Fallback, Forward},
-    router,
-};
+use litellm_gateway_inference::{Deployment, Gateway, router};
 use litellm_http::{HttpClientPool, HttpSettings, Resolution, media::PublicDnsResolver};
 use litellm_inference::resources::CoreResources;
 use litellm_secrets::{SecretValue, source::SecretSource};
@@ -41,18 +37,7 @@ pub fn app_with_permissions(
     api_base: &str,
     permissions: litellm_gateway_auth::Permissions,
 ) -> Router {
-    configured_app(model, api_base, permissions, None, None, Fallback::Reject)
-}
-
-pub fn app_forwarding_to(python: &str, model: &str, api_base: &str) -> Router {
-    configured_app(
-        model,
-        api_base,
-        litellm_gateway_auth::Permissions::All,
-        None,
-        None,
-        Fallback::Forward(Forward::new(python).unwrap()),
-    )
+    configured_app(model, api_base, permissions, None, None)
 }
 
 pub fn app_with_cache(
@@ -66,7 +51,6 @@ pub fn app_with_cache(
         litellm_gateway_auth::Permissions::All,
         Some(cache),
         None,
-        Fallback::Reject,
     )
 }
 
@@ -82,7 +66,6 @@ pub fn app_with_cache_for_principal(
         litellm_gateway_auth::Permissions::All,
         Some(cache),
         Some(principal),
-        Fallback::Reject,
     )
 }
 
@@ -92,7 +75,6 @@ fn configured_app(
     permissions: litellm_gateway_auth::Permissions,
     cache: Option<Arc<dyn litellm_cache_response::ResponseCacheService>>,
     principal: Option<litellm_gateway_auth::Principal>,
-    fallback: Fallback,
 ) -> Router {
     let pool = Arc::new(HttpClientPool::new(Arc::new(PublicDnsResolver)));
     let http = Resolution::from(&HttpSettings::default()).config;
@@ -120,7 +102,7 @@ fn configured_app(
         Some(cache) => gateway.with_cache(cache),
         None => gateway,
     };
-    router(Arc::new(gateway), fallback).layer(axum::middleware::from_fn_with_state(
+    router(Arc::new(gateway)).layer(axum::middleware::from_fn_with_state(
         (permissions, principal),
         test_identity,
     ))

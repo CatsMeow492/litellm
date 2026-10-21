@@ -11,18 +11,26 @@ use bytes::BytesMut;
 use futures_util::StreamExt;
 use litellm_core_utils::decline::Decline;
 
-use super::Fallback;
-use crate::request::MAX_BODY_BYTES;
+use super::Forward;
+
+#[derive(Clone)]
+pub(super) struct Replay {
+    pub forward: Forward,
+    pub record_limit: usize,
+}
 
 /// Records the request before any handler reads it, and forwards the recording when the
 /// response says the request was declined.
-pub(crate) async fn replay(
-    State(fallback): State<Fallback>,
+pub(super) async fn replay(
+    State(Replay {
+        forward,
+        record_limit,
+    }): State<Replay>,
     request: Request,
     next: Next,
 ) -> Response {
     let (parts, body) = request.into_parts();
-    let body = match buffer(body).await {
+    let body = match buffer(body, record_limit).await {
         Ok(body) => body,
         Err(body) => return next.run(Request::from_parts(parts, body)).await,
     };
@@ -31,20 +39,17 @@ pub(crate) async fn replay(
     let Some(&decline) = response.extensions().get::<Decline>() else {
         return response;
     };
-    match fallback {
-        Fallback::Reject => response,
-        Fallback::Forward(forward) => forward.send(recorded.map(Body::from), decline).await,
-    }
+    forward.send(recorded.map(Body::from), decline).await
 }
 
 /// The whole body, or, when it is too large or unreadable, a body that yields the same bytes
 /// and the same failure, so the handler reports it in its own error envelope.
-async fn buffer(body: Body) -> Result<Bytes, Body> {
+async fn buffer(body: Body, limit: usize) -> Result<Bytes, Body> {
     let mut stream = body.into_data_stream();
     let mut seen = BytesMut::new();
     while let Some(chunk) = stream.next().await {
         match chunk {
-            Ok(chunk) if seen.len() + chunk.len() <= MAX_BODY_BYTES => {
+            Ok(chunk) if seen.len() + chunk.len() <= limit => {
                 seen.extend_from_slice(&chunk);
             }
             failed => {

@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 use crate::{Deployment, Error, Gateway};
 
 pub(crate) const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
-pub(crate) const MAX_BODY_BYTES: usize = MAX_FILE_BYTES + 1024 * 1024;
+pub const MAX_BODY_BYTES: usize = MAX_FILE_BYTES + 1024 * 1024;
 
 pub(crate) struct Upload {
     pub bytes: Bytes,

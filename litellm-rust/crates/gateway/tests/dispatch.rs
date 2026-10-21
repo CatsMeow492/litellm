@@ -1,16 +1,40 @@
-mod support;
-
 use std::net::SocketAddr;
 
 use axum::{
+    Router,
     body::{Body, to_bytes},
     extract::ConnectInfo,
     http::Request,
+    response::Response,
 };
+use litellm_config::Config;
+use litellm_gateway::{Fallback, Forward};
 use rstest::rstest;
-use serde_json::json;
+use serde_json::{Value, json};
 use tower::ServiceExt;
 use wiremock::{Mock, MockServer, ResponseTemplate, matchers::any};
+
+fn app(python: &str, model: &str, provider: &str) -> Router {
+    let config = Config::from_yaml(&format!(
+        "general_settings:\n  master_key: gateway-key\nmodel_list:\n  - model_name: public/model\n    litellm_params:\n      model: {model}\n      api_base: {provider}\n      api_key: test-key\n"
+    ))
+    .unwrap();
+    let inference = litellm_gateway::build_inference(&config).unwrap();
+    let fallback = Fallback::Forward(Forward::new(python).unwrap());
+    litellm_gateway::router(inference, &config, None, None, fallback)
+}
+
+async fn send(app: Router, path: &str, body: Value) -> Response {
+    app.oneshot(
+        Request::post(path)
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer gateway-key")
+            .body(Body::from(body.to_string()))
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+}
 
 async fn python() -> MockServer {
     let python = MockServer::start().await;
@@ -62,13 +86,13 @@ async fn a_core_decline_reaches_python_as_the_client_sent_it(
 ) {
     let python = python().await;
     let provider = provider().await;
-    let app = support::app_forwarding_to(&python.uri(), model, &provider.uri());
+    let app = app(&python.uri(), model, &provider.uri());
 
     let response = app
         .oneshot(
             Request::post(path)
                 .header("content-type", "application/json")
-                .header("authorization", "Bearer client-key")
+                .header("authorization", "Bearer gateway-key")
                 .header("x-client-header", "kept")
                 .header("connection", "te")
                 .header("te", "trailers")
@@ -95,32 +119,10 @@ async fn a_core_decline_reaches_python_as_the_client_sent_it(
     };
     assert_eq!(forwarded_path, path);
     assert_eq!(forwarded.body, body.as_bytes());
-    assert_eq!(forwarded.headers["authorization"], "Bearer client-key");
+    assert_eq!(forwarded.headers["authorization"], "Bearer gateway-key");
     assert_eq!(forwarded.headers["x-client-header"], "kept");
     assert_eq!(forwarded.headers["x-litellm-gateway-declined"], reason);
     assert!(!forwarded.headers.contains_key("te"));
-}
-
-#[rstest]
-#[tokio::test]
-async fn a_standalone_gateway_answers_a_decline_with_its_own_501() {
-    let provider = provider().await;
-    let response = support::post(
-        support::app("gemini/test-model", &provider.uri()),
-        "/v1/responses",
-        json!({"model": "public/model", "input": "hi"}),
-    )
-    .await;
-
-    assert_eq!(response.status(), 501);
-    let body = support::json(response).await;
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("native HTTP responses provider")
-    );
-    assert!(provider.received_requests().await.unwrap().is_empty());
 }
 
 #[rstest]
@@ -128,11 +130,11 @@ async fn a_standalone_gateway_answers_a_decline_with_its_own_501() {
 #[case::unknown_model(json!({"model": "other", "messages": [{"role": "user", "content": "hi"}]}), 400)]
 #[case::provider_failure(json!({"model": "public/model", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 16}), 500)]
 #[tokio::test]
-async fn a_terminal_error_is_never_forwarded(#[case] body: serde_json::Value, #[case] status: u16) {
+async fn a_terminal_error_is_never_forwarded(#[case] body: Value, #[case] status: u16) {
     let python = python().await;
     let provider = provider().await;
-    let response = support::post(
-        support::app_forwarding_to(&python.uri(), "anthropic/test-model", &provider.uri()),
+    let response = send(
+        app(&python.uri(), "anthropic/test-model", &provider.uri()),
         "/v1/chat/completions",
         body,
     )
@@ -152,7 +154,9 @@ async fn a_forwarded_decline_names_the_client_in_x_forwarded_for(
 ) {
     let python = python().await;
     let provider = provider().await;
-    let request = Request::post("/v1/chat/completions").header("content-type", "application/json");
+    let request = Request::post("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .header("authorization", "Bearer gateway-key");
     let request = match incoming {
         Some(chain) => request.header("x-forwarded-for", chain),
         None => request,
@@ -167,7 +171,7 @@ async fn a_forwarded_decline_names_the_client_in_x_forwarded_for(
         "203.0.113.7:50000".parse::<SocketAddr>().unwrap(),
     ));
 
-    support::app_forwarding_to(&python.uri(), "anthropic/test-model", &provider.uri())
+    app(&python.uri(), "anthropic/test-model", &provider.uri())
         .oneshot(request)
         .await
         .unwrap();

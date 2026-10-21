@@ -1,6 +1,8 @@
 mod auth;
+mod dispatch;
 mod error;
 mod secrets;
+pub use dispatch::{Fallback, Forward, InvalidUpstream};
 pub use error::Error;
 
 use std::{sync::Arc, time::Instant};
@@ -16,10 +18,7 @@ use http_body_util::BodyExt;
 
 use litellm_config::Config;
 use litellm_gateway_auth::Auth;
-use litellm_gateway_inference::{
-    Gateway, ModelRouter,
-    dispatch::{Fallback, NOT_NATIVE},
-};
+use litellm_gateway_inference::{Gateway, ModelRouter};
 use litellm_http::{
     ClientVariant, HttpClientPool, HttpSettings, HttpSettingsLayer, Resolution, SslVerify,
     media::PublicDnsResolver,
@@ -124,28 +123,17 @@ pub fn router(
     fallback: Fallback,
 ) -> Router {
     let auth = Auth::from_config(config, inference.secrets.clone());
-    let served = litellm_gateway_inference::router(inference, fallback.clone())
-        .merge(mcp.unwrap_or_default())
-        .route_layer(axum::middleware::from_fn(auth::bind_session_owner))
-        .route_layer(axum::middleware::from_fn_with_state(
-            auth,
-            litellm_gateway_auth::authenticate,
-        ))
-        .layer(axum::middleware::from_fn(log_request))
-        .merge(ui.unwrap_or_default());
-    match fallback {
-        Fallback::Reject => served,
-        Fallback::Forward(forward) => {
-            let unmatched = forward.clone();
-            served
-                .fallback(move |request: Request| async move {
-                    unmatched.send(request, NOT_NATIVE).await
-                })
-                .method_not_allowed_fallback(move |request: Request| async move {
-                    forward.send(request, NOT_NATIVE).await
-                })
-        }
-    }
+    let routes = litellm_gateway_inference::router(inference).merge(mcp.unwrap_or_default());
+    let served =
+        dispatch::replay_declines(routes, &fallback, litellm_gateway_inference::MAX_BODY_BYTES)
+            .route_layer(axum::middleware::from_fn(auth::bind_session_owner))
+            .route_layer(axum::middleware::from_fn_with_state(
+                auth,
+                litellm_gateway_auth::authenticate,
+            ))
+            .layer(axum::middleware::from_fn(log_request))
+            .merge(ui.unwrap_or_default());
+    dispatch::forward_unmatched(served, fallback)
 }
 
 async fn log_request(request: Request, next: Next) -> Response {

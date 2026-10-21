@@ -6,7 +6,7 @@ use axum::{
     http::Request,
 };
 use litellm_config::Config;
-use litellm_gateway_inference::dispatch::Fallback;
+use litellm_gateway::Fallback;
 use litellm_gateway_mcp::{
     HttpConfig,
     rmcp::{
