@@ -204,7 +204,8 @@ async fn streamed(
                 .chunks(3)
                 .map(|bytes| Ok(Bytes::copy_from_slice(bytes)))
                 .collect::<Vec<_>>();
-            let ending = fail.then_some(Err(Error::Unsupported("test transport failure")));
+            let ending =
+                fail.then_some(Err(Error::InvalidRequest("test transport failure".into())));
             Ok(CallOutput::Stream {
                 head: (),
                 chunks: stream::iter(chunks.into_iter().chain(ending)).boxed(),
@@ -315,7 +316,7 @@ async fn a_provider_failure_never_populates_the_cache(cache: Arc<dyn ResponseCac
         None,
         || async {
             calls.fetch_add(1, Ordering::SeqCst);
-            Err(Error::Unsupported("test provider failure"))
+            Err(Error::InvalidRequest("test provider failure".into()))
         },
     )
     .await;
@@ -482,7 +483,7 @@ impl Interceptors<Error> for CacheHitAccounting {
         );
         self.key.set(key).unwrap();
         if self.reject {
-            return Err(Error::Unsupported("cache accounting rejected"));
+            return Err(Error::InvalidRequest("cache accounting rejected".into()));
         }
         Ok(())
     }
@@ -569,10 +570,10 @@ async fn cache_hits_notify_accounting_once_and_propagate_its_failure(
         .await
     };
     if reject {
-        assert!(matches!(
-            result,
-            Err(Error::Unsupported("cache accounting rejected"))
-        ));
+        assert_eq!(
+            result.unwrap_err(),
+            Error::InvalidRequest("cache accounting rejected".into())
+        );
     } else {
         assert_eq!(result.unwrap(), expected);
     }

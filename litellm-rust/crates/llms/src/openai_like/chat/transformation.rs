@@ -243,14 +243,14 @@ fn normalize_choice(position: usize, choice: &Value) -> Result<ChatCompletionsCh
         // normalized type cannot carry tool calls at all. Declining is
         // terminal at this point, but passing back an empty assistant turn
         // would fabricate the reply.
-        return Err(Error::Unsupported("tool call response"));
+        return Err(Error::InvalidResponse("tool call response".into()));
     }
     if message.get("refusal").is_some_and(|value| !value.is_null()) {
-        return Err(Error::Unsupported("refusal response"));
+        return Err(Error::InvalidResponse("refusal response".into()));
     }
     let content = message.get("content");
     if content.is_some_and(|value| !value.is_null() && !value.is_string()) {
-        return Err(Error::Unsupported("non-text response content"));
+        return Err(Error::InvalidResponse("non-text response content".into()));
     }
     Ok(ChatCompletionsChoice {
         index: choice
@@ -279,10 +279,11 @@ mod tests {
         Error,
         base_llm::{
             auth::AuthScheme,
-            chat::transformation::{BaseConfig, ProviderChatResponseData, Unsupported},
+            chat::transformation::{BaseConfig, ProviderChatResponseData},
         },
         openai_like::chat::transformation::OPENAI_LIKE_CHAT_COMPLETIONS_CONFIG,
     };
+    use litellm_core_utils::decline::Decline;
     use litellm_llms_types::formats::chat_completions::{ChatCompletionsResponse, ChatMessage};
     use rstest::rstest;
     use serde_json::{Map, Value, json};
@@ -318,7 +319,7 @@ mod tests {
             .transform_response("some-model", ProviderChatResponseData { body })
     }
 
-    fn reason(msgs: Value, opts: Value) -> Option<Unsupported> {
+    fn reason(msgs: Value, opts: Value) -> Option<Decline> {
         OPENAI_LIKE_CHAT_COMPLETIONS_CONFIG.unsupported_reason(&messages(msgs), &params(opts))
     }
 
@@ -528,9 +529,7 @@ mod tests {
     }
 
     #[rstest]
-    fn a_tool_call_response_declines_instead_of_dropping_the_calls() {
-        // The `json_mode` rewrite needs a request flag the route does not carry, so
-        // a tool-call answer falls back to Python rather than losing the calls.
+    fn a_tool_call_response_fails_instead_of_dropping_the_calls() {
         assert_eq!(
             transform_response(json!({
                 "model": "m",
@@ -547,12 +546,12 @@ mod tests {
                     "finish_reason": "tool_calls",
                 }],
             })),
-            Err(Error::Unsupported("tool call response"))
+            Err(Error::InvalidResponse("tool call response".into()))
         );
     }
 
     #[rstest]
-    fn a_refusal_declines_instead_of_returning_an_empty_reply() {
+    fn a_refusal_fails_instead_of_returning_an_empty_reply() {
         assert_eq!(
             transform_response(json!({
                 "model": "m",
@@ -561,12 +560,12 @@ mod tests {
                     "finish_reason": "stop",
                 }],
             })),
-            Err(Error::Unsupported("refusal response"))
+            Err(Error::InvalidResponse("refusal response".into()))
         );
     }
 
     #[rstest]
-    fn a_non_text_response_content_declines() {
+    fn a_non_text_response_content_is_invalid() {
         assert_eq!(
             transform_response(json!({
                 "model": "m",
@@ -575,7 +574,7 @@ mod tests {
                     "finish_reason": "stop",
                 }],
             })),
-            Err(Error::Unsupported("non-text response content"))
+            Err(Error::InvalidResponse("non-text response content".into()))
         );
     }
 
@@ -585,7 +584,7 @@ mod tests {
     fn declines(#[case] opts: Value, #[case] expected: &'static str) {
         assert_eq!(
             reason(json!([{"role": "user", "content": "hi"}]), opts),
-            Some(Unsupported(expected))
+            Some(Decline::new(expected))
         );
     }
 
@@ -615,7 +614,7 @@ mod tests {
                 json!([{"role": "user", "content": "hi"}]),
                 json!({"tools": [{"type": "function", "function": {"name": "f"}}]}),
             ),
-            Some(Unsupported("unrecognized request parameter"))
+            Some(Decline::new("unrecognized request parameter"))
         );
     }
 }

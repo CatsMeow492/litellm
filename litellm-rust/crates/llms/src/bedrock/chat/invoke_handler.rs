@@ -1,6 +1,7 @@
 use base64::Engine;
 use bytes::Buf;
 use futures_util::{Stream, StreamExt};
+use litellm_core_utils::decline::Decline;
 use litellm_framer::{
     aws_event_stream::{AwsEventStreamCodec, Message},
     frames,
@@ -85,10 +86,12 @@ pub fn invoke_chat_stream(invoke_provider: &str, shape: StreamShape) -> Result<C
             invoke_anthropic_event_stream,
             ModelResponseIterator::new(shape),
         )),
-        InvokeProvider::DeepseekR1 | InvokeProvider::Moonshot => Err(Error::Unsupported(
-            "Bedrock invoke streaming for this model family",
+        InvokeProvider::DeepseekR1 | InvokeProvider::Moonshot => Err(Error::Declined(
+            Decline::new("Bedrock invoke streaming for this model family"),
         )),
-        InvokeProvider::Unsupported => Err(Error::Unsupported("Bedrock invoke streaming")),
+        InvokeProvider::Unsupported => {
+            Err(Error::Declined(Decline::new("Bedrock invoke streaming")))
+        }
     }
 }
 

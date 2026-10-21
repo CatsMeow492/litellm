@@ -20,7 +20,7 @@ use pyo3::{
 use serde_json::{Map, Value};
 
 use crate::{
-    errors::{RustUpstreamError, route_error_to_pyerr},
+    errors::{RustUpstreamError, decline_to_pyerr, route_error_to_pyerr},
     marshal::{optional_timeout, project_optional_fields, public_response, python_timeout_seconds},
     python_settings::missing_module,
     routes::RequestView,
@@ -276,6 +276,9 @@ impl PythonBinding for MessagesPythonHost {
     }
 
     fn map_error(&self, py: Python<'_>, error: Error) -> PyResult<PyErr> {
+        if let Some(declined) = decline_to_pyerr(&error) {
+            return Ok(declined);
+        }
         if let Error::Secret(source) = &error
             && let Some(original) = crate::secrets::python_error(py, source.source_error())
         {

@@ -49,9 +49,8 @@ impl Error {
     pub fn status(&self) -> StatusCode {
         match self {
             Self::Auth(error) => error.status(),
-            Self::Unsupported(_)
-            | Self::Route(InferenceError::Unsupported(_))
-            | Self::Ocr(OcrError::Unsupported(_)) => StatusCode::NOT_IMPLEMENTED,
+            Self::Unsupported(_) => StatusCode::NOT_IMPLEMENTED,
+            Self::Route(error) if error.declined().is_some() => StatusCode::NOT_IMPLEMENTED,
             Self::BodyTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Ocr(
                 OcrError::Auth(litellm_auth::Error::MissingApiKey { .. })

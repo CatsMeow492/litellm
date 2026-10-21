@@ -20,7 +20,7 @@ use serde_json::{Map, Value};
 
 use super::{NativeCall, RequestView};
 use crate::{
-    errors::{RustUpstreamError, route_error_to_pyerr},
+    errors::{RustUpstreamError, decline_to_pyerr, route_error_to_pyerr},
     marshal::{RouteOptions, optional_timeout, public_response, python_timeout_seconds},
 };
 
@@ -120,6 +120,9 @@ impl InferenceHost {
     }
 
     pub fn error(&self, py: Python<'_>, error: Error) -> PyResult<PyErr> {
+        if let Some(declined) = decline_to_pyerr(&error) {
+            return Ok(declined);
+        }
         if let Error::Secret(source) = &error
             && let Some(original) = crate::secrets::python_error(py, source.source_error())
         {

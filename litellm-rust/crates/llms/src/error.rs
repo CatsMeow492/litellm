@@ -1,3 +1,5 @@
+use litellm_core_utils::decline::Decline;
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
     #[error("expected {expected}, got {actual}")]
@@ -11,8 +13,8 @@ pub enum Error {
     InvalidRequest(#[source] ErrorDetail),
     #[error("invalid response: {0}")]
     InvalidResponse(#[source] ErrorDetail),
-    #[error("unsupported: {0}")]
-    Unsupported(&'static str),
+    #[error(transparent)]
+    Declined(Decline),
     #[error(transparent)]
     Auth(#[from] litellm_auth::Error),
 }

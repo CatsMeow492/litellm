@@ -20,12 +20,23 @@ pyo3::create_exception!(
 );
 
 pub(crate) fn route_error_to_pyerr(error: Error) -> PyErr {
+    if let Some(declined) = decline_to_pyerr(&error) {
+        return declined;
+    }
     match error {
         Error::Transport(TransportError::Http { status, body }) => {
             RustUpstreamError::new_err((status, body))
         }
         other => by_fault(other.is_request(), other.to_string()),
     }
+}
+
+/// A core decline skips the route's public exception mapping, so Python dispatch catches it
+/// and runs the legacy path.
+pub(crate) fn decline_to_pyerr(error: &Error) -> Option<PyErr> {
+    error
+        .declined()
+        .map(|decline| RustBridgeDeclined::new_err(decline.reason))
 }
 
 /// A request the caller got wrong is a `ValueError`; anything else is a `RuntimeError`.
@@ -39,10 +50,11 @@ pub(crate) fn by_fault(is_request: bool, message: String) -> PyErr {
 
 #[cfg(test)]
 mod tests {
+    use litellm_core_utils::decline::Decline;
+
     use super::*;
 
     #[rstest::rstest]
-    #[case::unsupported(Error::Unsupported("test capability"), true)]
     #[case::invalid_provider(Error::InvalidProvider("unknown".into()), true)]
     #[case::invalid_request(Error::InvalidRequest("empty messages".into()), true)]
     #[case::connection(TransportError::Connect("unreachable".into()).into(), false)]
@@ -55,6 +67,26 @@ mod tests {
             assert!(!failure.is_instance_of::<RustBridgeDeclined>(py));
             assert_eq!(failure.is_instance_of::<PyValueError>(py), is_request);
             assert_eq!(failure.is_instance_of::<PyRuntimeError>(py), !is_request);
+        });
+    }
+
+    #[test]
+    fn a_core_decline_hands_the_call_back_to_python() {
+        Python::initialize();
+        Python::attach(|py| {
+            let declined = route_error_to_pyerr(Error::from(litellm_llms::Error::Declined(
+                Decline::new("unrecognized request parameter"),
+            )));
+            assert!(declined.is_instance_of::<RustBridgeDeclined>(py));
+            assert_eq!(
+                declined
+                    .value(py)
+                    .getattr("args")
+                    .unwrap()
+                    .extract::<(String,)>()
+                    .unwrap(),
+                ("unrecognized request parameter".into(),)
+            );
         });
     }
 

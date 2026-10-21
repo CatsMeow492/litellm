@@ -72,8 +72,6 @@ pub enum Error {
     PollOrigin,
     #[error("OCR polling timed out")]
     PollTimeout,
-    #[error("unsupported by the rust path: {0}")]
-    Unsupported(&'static str),
     #[error("invalid provider: {0}")]
     InvalidProvider(String),
     #[error("invalid model: {provider} has no model {model:?} - use one of: {}", supported.join(", "))]
