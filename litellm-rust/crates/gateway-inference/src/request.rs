@@ -1,7 +1,7 @@
 use axum::{
     body::Bytes,
     extract::{FromRequest, FromRequestParts, Multipart, OriginalUri, Request},
-    http::request::Parts,
+    http::{HeaderMap, request::Parts},
     response::IntoResponse,
 };
 use serde_json::{Map, Value};
@@ -21,16 +21,16 @@ pub struct JsonObject(pub Map<String, Value>);
 
 pub struct RequestId(pub Option<String>);
 
+pub(crate) fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name)?.to_str().ok()
+}
+
 impl<S: Send + Sync> FromRequestParts<S> for RequestId {
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
         Ok(Self(
-            parts
-                .headers
-                .get("x-request-id")
-                .and_then(|value| value.to_str().ok())
-                .map(str::to_owned),
+            header(&parts.headers, "x-request-id").map(str::to_owned),
         ))
     }
 }
@@ -59,15 +59,11 @@ impl<S: Send + Sync> FromRequest<S> for InferenceBody {
     type Rejection = Error;
 
     async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let multipart = request
-            .headers()
-            .get("content-type")
-            .and_then(|header| header.to_str().ok())
-            .is_some_and(|value| {
-                value
-                    .to_ascii_lowercase()
-                    .starts_with("multipart/form-data")
-            });
+        let multipart = header(request.headers(), "content-type").is_some_and(|value| {
+            value
+                .to_ascii_lowercase()
+                .starts_with("multipart/form-data")
+        });
         if !multipart {
             let JsonObject(fields) = JsonObject::from_request(request, state).await?;
             return Ok(Self {

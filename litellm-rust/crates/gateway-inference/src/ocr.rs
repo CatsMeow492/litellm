@@ -1,7 +1,12 @@
 use litellm_gateway_auth::AuthenticatedRequest;
 use std::sync::Arc;
 
-use axum::{Json, extract::State, http::HeaderMap, response::IntoResponse};
+use axum::{
+    Json,
+    extract::{FromRequestParts, State},
+    http::request::Parts,
+    response::IntoResponse,
+};
 use litellm_auth::SecretValue;
 use litellm_inference_ocr::types::{LiteLLMOcrRequest, OcrConnectionInputs, OcrDocumentInput};
 use litellm_llms::base_llm::ocr::transformation::decode_request_value;
@@ -16,25 +21,35 @@ use crate::{
 pub(crate) async fn create(
     State(gateway): State<Arc<Gateway>>,
     identity: AuthenticatedRequest,
-    headers: HeaderMap,
+    ReqFormat(header_format): ReqFormat,
     body: InferenceBody,
 ) -> Result<impl IntoResponse, Error> {
-    handle(&gateway, &identity, &headers, body).await.map(Json)
+    handle(&gateway, &identity, header_format, body)
+        .await
+        .map(Json)
+}
+
+pub(crate) struct ReqFormat(Option<String>);
+
+impl<S: Send + Sync> FromRequestParts<S> for ReqFormat {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
+        Ok(Self(
+            request::header(&parts.headers, "x-req-format").map(str::to_owned),
+        ))
+    }
 }
 
 async fn handle(
     gateway: &Gateway,
     identity: &AuthenticatedRequest,
-    headers: &HeaderMap,
+    header_format: Option<String>,
     InferenceBody {
         fields: body,
         upload,
     }: InferenceBody,
 ) -> Result<Value, Error> {
-    let header_format = headers
-        .get("x-req-format")
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
     let deployment = request::resolve_deployment(gateway, &body)?;
     request::authorize_model(identity, deployment, &body).await?;
     let document = match upload {

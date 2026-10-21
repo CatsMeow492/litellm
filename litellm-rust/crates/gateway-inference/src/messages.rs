@@ -116,7 +116,7 @@ fn forwarded(parts: &Parts) -> Option<ProviderSpecificHeaders> {
             let extra_headers: Map<String, Value> = names
                 .iter()
                 .filter_map(|name| {
-                    let value = parts.headers.get(*name)?.to_str().ok()?;
+                    let value = request::header(&parts.headers, name)?;
                     Some(((*name).to_owned(), Value::from(value)))
                 })
                 .collect();
